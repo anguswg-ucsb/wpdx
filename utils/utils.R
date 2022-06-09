@@ -61,12 +61,12 @@ get_win_pct <- function(season_pbp) {
 }
 
 # Return clean rosters from nflfastR::fast_scraper() output
-clean_rosters <- function(fsr) {
+clean_rosters <- function(fscrape) {
   
-  logger::log_info("Cleaning {fsr$season[1]} rosters...")
+  logger::log_info("Cleaning {fscrape$season[1]} rosters...")
   
   roster_df <- 
-    fsr %>% 
+    fscrape %>%
     dplyr::select(player_id = gsis_id, full_name, season, 
                   team, position, birth_date, height, weight, years_exp) %>%
     dplyr::mutate(
@@ -83,40 +83,88 @@ clean_rosters <- function(fsr) {
 
 # Calculate QB EPA per play and total EPA per game
 get_qb_stats <- function(epa_pbp) {
-  
-  logger::log_info("Summarizing {epa_pbp$season[1]} QB stats...")
-  
+
+  logger::log_info("\n\nSummarizing {epa_pbp$season[1]} QB stats...")
+ # epa_pbp <- pbp
+ # 
   qb_epa <- 
     epa_pbp %>% 
-    dplyr::select(season, play_id, game_id, game_date, passer_player_name, passer_player_id, 
+    dplyr::select(season, play_id, game_id, game_date, passer_player_name, passer_player_id,
+                  # pass_length, passing_yards, series_result,
+                  air_yards, complete_pass,
+                  incomplete_pass, success, 
                   qb_epa, total_home_pass_epa,total_away_pass_epa) %>% 
-    na.omit() %>% 
-    dplyr::group_by(game_id, passer_player_name) %>% 
     dplyr::mutate(
-      play_num = 1:n()
-    ) %>% 
-    dplyr::select(season, play_id, game_id, game_date, passer_player_name, passer_player_id, qb_epa) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::group_by(game_id, passer_player_name) %>% 
-    dplyr::arrange(play_id, game_date, .by_group = T) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::group_by(game_id, passer_player_name) %>% 
-    dplyr::mutate(
-      total_epa       = cumsum(qb_epa),
-      max_epa         = max(total_epa, na.rm =T),
-      total_plays     = n()
-    )  %>% 
-    dplyr::ungroup() %>% 
-    dplyr::group_by(season, game_id, game_date, passer_player_name) %>% 
-    dplyr::summarize(
-      qb_epa          = mean(max_epa, na.rm = T), 
-      qb_epa_per_play = qb_epa/mean(total_plays, na.rm = T)
-    ) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::group_by(passer_player_name) %>% 
-    dplyr::arrange(game_date, .by_group = T) %>% 
-    dplyr::mutate(
-      total_qb_epa       = cumsum(qb_epa)
-    )
-  return(qb_epa)
+      pass_length = case_when(
+        air_yards >= 15 ~ "deep",
+        air_yards < 15  ~ "short"
+        )
+      ) %>% 
+    na.omit() 
+  
+  if(nrow(qb_epa > 0)) {
+    
+    qb_epa <-
+      qb_epa %>% 
+      dplyr::group_by(game_id, passer_player_name) %>% 
+      dplyr::select(season, play_id, game_id, game_date, passer_player_name, passer_player_id, 
+                    pass_length, air_yards, complete_pass, incomplete_pass, success, qb_epa) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::group_by(game_id, passer_player_name) %>% 
+      dplyr::arrange(play_id, game_date, .by_group = T) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::group_by(game_id, passer_player_name) %>% 
+      dplyr::mutate(
+        total_epa       = cumsum(qb_epa),
+        max_epa         = max(total_epa, na.rm =T),
+        total_plays     = n()
+      )  %>% 
+      dplyr::ungroup() %>% 
+      dplyr::group_by(season, game_id, game_date, passer_player_name, pass_length) %>% 
+      dplyr::mutate(
+        pass_attempt    = n(),
+        pass_complete   = sum(complete_pass, na.rm = T)
+        ) %>% 
+      tidyr::pivot_wider(
+        names_from      = "pass_length", 
+        names_glue      = "{pass_length}_{.value}",
+        values_from     = c(pass_attempt, pass_complete)
+        ) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::group_by(season, game_id, game_date, passer_player_name) %>%
+      dplyr::summarize(
+        success              = sum(success),
+        air_yards            = sum(air_yards, na.rm = T), 
+        deep_pass_attempt    = mean(deep_pass_attempt, na.rm = T),
+        deep_pass_complete   = mean(deep_pass_complete, na.rm = T),
+        short_pass_attempt   = mean(short_pass_attempt, na.rm = T),
+        short_pass_complete  = mean(short_pass_complete, na.rm = T),
+        qb_epa               = mean(max_epa, na.rm = T), 
+        qb_epa_per_play      = qb_epa/mean(total_plays, na.rm = T)
+      ) %>% 
+      dplyr::ungroup() %>% 
+      tidyr::replace_na(
+        list(
+          deep_pass_attempt   = 0, 
+          deep_pass_complete  = 0,
+          short_pass_attempt  = 0, 
+          short_pass_complete = 0
+          )
+        ) %>% 
+      dplyr::group_by(passer_player_name) %>% 
+      dplyr::arrange(game_date, .by_group = T) %>% 
+      dplyr::mutate(
+        total_qb_epa       = cumsum(qb_epa)
+      ) %>%  
+      dplyr::ungroup()
+  
+    return(qb_epa) 
+    
+  } else {
+    
+    logger::log_info("\n\nSkipping {epa_pbp$season[1]} due to missing data\n---> returning NULL value")
+    
+    # return(NULL)
+    
+  }
 }

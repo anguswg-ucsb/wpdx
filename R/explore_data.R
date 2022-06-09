@@ -23,9 +23,6 @@ data_path  <-  here::here("data")
 # Exploratory Data Analysis
 # NFL Data from nflFastR
 
-rm(list = ls())
-
-
 # Question 1: what QB stats most influence W/L
 # Question 2: Factors that influence whether a RB will finish in top 5 on a week?
  # Team Win %
@@ -73,20 +70,25 @@ team_records <- lapply(seasons_lst, FUN = function(x) {
   pbp <- nflfastR::load_pbp(x) %>% 
     get_win_pct()
   }
-  )
-
+  ) %>%
+  dplyr::bind_rows()
 # ***********************
 # ---- Clean rosters ----
 # ***********************
 
 # pull rosters for every year
 rosters <- lapply(seasons_lst, FUN = function(x) {
- fsr <-  fast_scraper_roster(x)  %>% 
-    nflfastR::add_qb_epa() %>% 
+ fsr <- fast_scraper_roster(x)  %>% 
     clean_rosters()
   }
   ) %>% 
   dplyr::bind_rows() 
+
+# **************************************************
+# ---- Join QB Adv stats w/ standard stats data ----
+# **************************************************
+
+# qb_stats <- inner_join(qb_epa,  dplyr::select(stats, ))
 
 # ****************************
 # ---- Games Tidy Tuesday ----
