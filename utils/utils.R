@@ -88,8 +88,10 @@ get_qb_stats <- function(epa_pbp) {
  # epa_pbp <- pbp
  # 
   qb_epa <- 
-    epa_pbp %>% 
-    dplyr::select(season, play_id, game_id, game_date, passer_player_name, passer_player_id,
+    epa_pbp %>%
+    # pbp %>% 
+    dplyr::select(season, week, play_id, game_id, game_date, passer_player_name, passer_player_id,
+                  player_id = id,
                   # pass_length, passing_yards, series_result,
                   air_yards, complete_pass,
                   incomplete_pass, success, 
@@ -107,7 +109,7 @@ get_qb_stats <- function(epa_pbp) {
     qb_epa <-
       qb_epa %>% 
       dplyr::group_by(game_id, passer_player_name) %>% 
-      dplyr::select(season, play_id, game_id, game_date, passer_player_name, passer_player_id, 
+      dplyr::select(season, week, play_id, game_id, game_date, passer_player_name, passer_player_id,  player_id,
                     pass_length, air_yards, complete_pass, incomplete_pass, success, qb_epa) %>% 
       dplyr::ungroup() %>% 
       dplyr::group_by(game_id, passer_player_name) %>% 
@@ -131,7 +133,7 @@ get_qb_stats <- function(epa_pbp) {
         values_from     = c(pass_attempt, pass_complete)
         ) %>% 
       dplyr::ungroup() %>% 
-      dplyr::group_by(season, game_id, game_date, passer_player_name) %>%
+      dplyr::group_by(season, week, game_id, game_date, passer_player_name, player_id) %>%
       dplyr::summarize(
         success              = sum(success),
         air_yards            = sum(air_yards, na.rm = T), 

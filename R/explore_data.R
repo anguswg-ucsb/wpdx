@@ -88,7 +88,33 @@ rosters <- lapply(seasons_lst, FUN = function(x) {
 # ---- Join QB Adv stats w/ standard stats data ----
 # **************************************************
 
-# qb_stats <- inner_join(qb_epa,  dplyr::select(stats, ))
+qb_epa <-
+  qb_epa %>%
+  rename("player_name" = passer_player_name)
+
+qb_stats <- left_join(
+  qb_epa,  
+  dplyr::select(stats, season, week, recent_team, player_name, player_id, 7:12),
+  by = c("season", "week", "player_id")
+  )
+qb_stats <- 
+  qb_stats %>% 
+  dplyr::select(season, week,recent_team,  game_id, game_date, player_name, player_id,
+                success, completions, attempts, passing_yards, air_yards, passing_tds, interceptions, sacks,
+                deep_pass_complete, deep_pass_attempt,  short_pass_complete, short_pass_attempt, 
+                qb_epa, qb_epa_per_play, total_qb_epa
+                ) %>% 
+  dplyr::mutate(
+    season         = as.character(season), 
+    week           = as.character(week), 
+    comp_pct       = completions/attempts,
+    deep_comp_pct  = deep_pass_complete/deep_pass_attempt,
+    short_comp_pct = short_pass_complete/short_pass_attempt
+  ) %>% 
+  dplyr::group_by(season, week, game_id, recent_team) %>% 
+  dplyr::mutate(across(success:short_pass_attempt, sum)) %>% 
+  dplyr::group_by(season, week, game_id, recent_team) %>% 
+  dplyr::summarise(across(where(is.numeric), mean))
 
 # ****************************
 # ---- Games Tidy Tuesday ----
