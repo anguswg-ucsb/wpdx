@@ -5,22 +5,70 @@ get_win_pct <- function(season_pbp) {
   season_year <-  season_pbp$season[1]
   
   logger::log_info("Calculating {season_year} win loss records...")
-  
+
+  homeaway <- 
+    season_pbp %>% 
+    dplyr::select(game_id, home_team, away_team) %>% 
+    dplyr::group_by(game_id) %>% 
+    dplyr::slice(1) %>%
+    tidyr::pivot_longer(
+      cols      = c(home_team, away_team),
+      names_to  = "home_away",
+      values_to = "team"
+      ) %>% 
+    dplyr::ungroup()
+ 
   # Slice off top row for each game to extract winners/loser
   season_pbp <-
     season_pbp %>% 
-    dplyr::select(season, game_id, home_team, away_team, season_type, week, home_score, away_score, result, roof, surface) %>% 
-    dplyr::group_by(game_id) %>%
-    slice(1) 
-  
-  # Create Win/loss/tie columns
-  team_results <- 
-    season_pbp %>% 
+    dplyr::select(season, game_id, home_team, away_team, season_type, week, home_score, away_score,
+                  posteam, total_home_score,total_away_score, 
+                  result, score_differential, score_differential_post, roof, surface) %>%
+    dplyr::group_by(game_id, posteam) %>% 
     tidyr::pivot_longer(
       cols      = c(away_team, home_team),
       names_to  = "home_away",
       values_to = "team"
+    ) %>%
+    dplyr::ungroup() %>% 
+    dplyr::group_by(game_id) %>%
+    # dplyr::mutate(
+    #   max_score_diff = max(score_differential, na.rm = T),
+    #   min_score_diff = min(score_differential, na.rm = T)
+    # ) %>% 
+    # dplyr::filter(game_id == "1999_01_CIN_TEN") %>% 
+    dplyr::filter(!is.na(score_differential)) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(game_id, posteam) %>% 
+    dplyr::mutate(
+      max_score_diff = max(score_differential),
+      min_score_diff = min(score_differential)
     ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(season, game_id, 
+                  home_away, team, posteam,
+                  season_type, week, home_score, away_score,
+                  result, max_score_diff, min_score_diff, roof, surface
+                  # weather,  temp, wind
+                  ) %>%
+    # dplyr::group_by(game_id) %>%
+    # dplyr::filter(!is.na(max_score_diff)) %>% 
+    # dplyr::ungroup() %>% 
+    dplyr::group_by(game_id, posteam) %>% 
+    dplyr::slice(1) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(-team, -home_away) %>% 
+    dplyr::rename("team" = "posteam") %>% 
+    dplyr::left_join(
+      homeaway, 
+      by = c("game_id", "team")
+      )
+  
+  # Create Win/loss/tie columns
+  team_results <- 
+    season_pbp %>% 
+    # tidyr::pivot_longer(cols      = c(away_team, home_team),  names_to  = "home_away",  values_to = "team" ) %>% 
+    dplyr::group_by(game_id) %>% 
     dplyr::mutate(
       win = case_when(
         home_away == "away_team" & away_score > home_score ~ 1,
@@ -55,7 +103,10 @@ get_win_pct <- function(season_pbp) {
       games_played = 1:n(),
       win_pct      = (win_csum + tie_csum)/games_played
     ) %>% 
-    dplyr::select(season, team, game_id, season_type, week, home_away, win, loss, tie, win_pct, games_played)
+    dplyr::select(season, team, game_id, season_type, week, home_away, max_score_diff, min_score_diff,
+                  roof, surface,
+                  # weather,temp, wind, 
+                  win, loss, tie, win_pct, games_played)
   
   return(team_results)
 }
