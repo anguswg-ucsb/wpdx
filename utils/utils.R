@@ -1,3 +1,58 @@
+nfl_teams <- function() {
+  team_df <- tibble::tibble(
+    team_name = c("Arizona Cardinals", "Atlanta Falcons" , "Baltimore Ravens",  "Buffalo Bills", 
+                  "Carolina Panthers", "Chicago Bears",  "Cincinnati Bengals" ,"Cleveland Browns",
+                  "Dallas Cowboys",  "Denver Broncos",  "Detroit Lions",  "Green Bay Packers", 
+                  "Houston Texans","Indianapolis Colts",  "Jacksonville Jaguars", "Kansas City Chiefs",   
+                  "Las Vegas Raiders",  "Oakland Raiders",  "Los Angeles Chargers", "San Diego Chargers", "Los Angeles Rams", "St. Louis Rams", 
+                  "Miami Dolphins", 
+                  "Minnesota Vikings",   "New England Patriots",  "New Orleans Saints", "New York Giants",         
+                  "New York Jets",       "Philadelphia Eagles",  "Pittsburgh Steelers",  "San Francisco 49ers", 
+                  "Seattle Seahawks", "Tampa Bay Buccaneers", "Tennessee Titans", "Washington Football Team", "Washington Redskins"),
+    team_abb  = c("ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", 
+                  "DET", "GB", "HOU", "IND", "JAX", "KC", "LV", "LV", "LAC", "LAC",  "LA", "LA",  "MIA", "MIN", "NE", "NO", 
+                  "NYG", "NYJ", "PHI", "PIT", "SF", "SEA", "TB", "TEN", "WAS","WAS")
+  )
+  return(team_df)
+}
+
+scrape_pfr <- function(year) {
+  
+  logger::log_info("\n\nScraping Pro Football Reference...\n{year} Rushing Defense ")
+  year <- 2020
+  url  <- paste0("https://widgets.sports-reference.com/wg.fcgi?css=1&site=pfr&url=%2Fyears%2F", year, "%2Fopp.htm&div=div_rushing")
+  
+  page <- rvest::read_html(url)
+  
+  page_nodes <- 
+    page %>%  
+    rvest::html_nodes("table")
+  
+  page_table <- rvest::html_table(
+    page_nodes[[1]],
+    header  = T,
+    fill    = T, 
+    convert = T
+  ) %>% 
+    setNames(c("rank", "team", "games", "attempts", "rush_yards", 
+               "rush_tds", "rush_yards_per_attempt", "rush_yards_per_game",
+               "epa_rush_def")) %>% 
+    dplyr::mutate(season = year) %>% 
+    dplyr::filter(!team %in% c("League Total", "Avg Tm/G", "Avg Team")) %>% 
+    dplyr::left_join(
+      nfl_teams(),
+      by = c("team" = "team_name")
+    ) %>% 
+    dplyr::select(team_abb, season, rank, rush_yards_per_attempt, rush_yards_per_game)
+  
+  return(page_table)
+  
+}
+
+cumulative_mean <- function(x) {
+  cummean <- (cumsum(x) / seq_along(x))
+  return(cummean)
+}
 
 # Function takes in Play by play dataset from nflfastR::load_pbp() and tidys --> adds win percentage
 get_win_pct <- function(season_pbp) {
@@ -106,7 +161,21 @@ get_win_pct <- function(season_pbp) {
     dplyr::select(season, team, game_id, season_type, week, home_away, max_score_diff, min_score_diff,
                   roof, surface,
                   # weather,temp, wind, 
-                  win, loss, tie, win_pct, games_played)
+                  win, loss, tie, win_pct, games_played) %>% 
+    dplyr::mutate(
+      split_game_id = substr(game_id, 9, 20),
+      home_team     = str_split_fixed(split_game_id, "_", 2)[1, 2],
+      away_team     = str_split_fixed(split_game_id, "_", 2)[1, 1]
+      ) %>% 
+    dplyr::mutate(
+      opponent  = case_when(
+        home_team == team ~ away_team,
+        away_team == team ~ home_team
+      )
+    ) %>% 
+    dplyr::select(-split_game_id, -home_team, -away_team) %>% 
+    dplyr::relocate(season, team, opponent) %>% 
+    dplyr::filter(team != "")
   
   return(team_results)
 }

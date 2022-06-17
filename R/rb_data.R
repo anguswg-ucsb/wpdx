@@ -59,8 +59,25 @@ team_records <- readRDS(here::here("data", "team_records2.rds"))
 
 rosters <- readRDS(here::here("data", "rosters.rds"))
 
+# Weekly player stats
 week_stats <- readRDS(here::here("data", "weekly_player_team_record.rds")) %>% 
   dplyr::filter(position == "RB")
+
+# Defensive Rankings
+def_ranks <-  readRDS(here::here("data", "rush_defense.rds"))
+unique(week_stats$team)
+
+# ***********************
+# ---- Win totals QB ----
+# ***********************
+
+# season total wins
+win_total  <- 
+  team_records %>% 
+  dplyr::group_by(season, team) %>% 
+  dplyr::summarise(
+    win  = sum(win, na.rm = T)
+  )
 # **************************************************
 # ---- Join QB Adv stats w/ standard stats data ----
 # **************************************************
@@ -78,28 +95,28 @@ week_finish <-
   ) %>% 
   dplyr::ungroup() %>% 
   dplyr::relocate(season, week, team, win, fp_hppr, fp_rank, fp_finish) %>% 
-  dplyr::filter(season == 2021, week %in% c(1, 2, 3, 4))
-cumulative_mean <- function(x) {
-  cummean <- (cumsum(x) / seq_along(x))
-  return(cummean)
-}
+  dplyr::filter(season == 2021, week %in% c(1, 2, 3, 4)) %>% 
+  dplyr::select(season, week, team, player_name,player_id, fp_hppr, fp_rank, fp_finish, carries:receiving_2pt_conversions) %>% 
+  dplyr::left_join(
+    dplyr::select(team_records, season, team, week, win_pct),
+    by = c("season", "week", "team")
+  ) %>% 
+  dplyr::relocate(season, week, team, player_name, player_id, fp_hppr, fp_rank, fp_finish, win_pct) 
+
+# Cumalive stats
 cuml_finish <-
   week_finish %>% 
-  dplyr::select(season:player_name, carries, rushing_yards, rushing_epa, targets) %>% 
+  dplyr::select(season, week, team, player_name,player_id, fp_hppr, fp_rank, fp_finish,win_pct, carries:receiving_2pt_conversions) %>% 
   # dplyr::filter(carries > 0)
   na.omit() %>% 
   dplyr::mutate(across(where(is.numeric), round, 3)) %>% 
   dplyr::group_by(season, player_id) %>% 
   dplyr::arrange(week, .by_group = T) %>% 
-  mutate(across(c(carries:targets), ~ lag(cumulative_mean(.x)), .names = "{col}_cuml")) 
+  dplyr::mutate(across(c(carries:receiving_2pt_conversions), ~ lag(cumulative_mean(.x)), .names = "{col}")) %>% 
   dplyr::mutate(
-    # rushing_yards_cuml = cumsum(rushing_yards)
-    rushing_yards_cuml = lag(cumulative_mean(rushing_yards)),
-    targets_cuml       = lag(cumulative_mean(targets))
-    # rushing_yards_cuml  = cumsum(rushing_yards) / seq_along(rushing_yards),
-    # lag_rushing_yards   = lag(rushing_yards_cuml)
+    yards_pc = rushing_yards/carries
   )
-
+na.omit(cuml_finish)
 cuml_finish
 # **************************************************
 # ---- Join QB Adv stats w/ standard stats data ----
