@@ -9,13 +9,9 @@ library(tidyverse)
 library(janitor)
 library(stringr)
 library(nflfastR)
-library(httr)
-library(jsonlite)
-library(rvest)
 library(corrplot)
 library(plotly)
 library(viridis)
-library(olsrr)
 
 source("utils/utils.R")
 
@@ -55,7 +51,12 @@ seasons_lst <- unique(stats$season)
 stats <- readRDS(here::here("data", "weekly_player.rds"))
 
 # Team win/loss
-team_records <- readRDS(here::here("data", "team_records2.rds"))
+team_records <- readRDS(here::here("data", "team_records.rds"))
+
+team_records %>% 
+  dplyr::mutate(opponent2 = case_when(
+    team == "LV"
+  ))
 
 rosters <- readRDS(here::here("data", "rosters.rds"))
 
@@ -78,6 +79,7 @@ win_total  <-
   dplyr::summarise(
     win  = sum(win, na.rm = T)
   )
+
 # **************************************************
 # ---- Join QB Adv stats w/ standard stats data ----
 # **************************************************

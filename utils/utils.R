@@ -163,18 +163,29 @@ get_win_pct <- function(season_pbp) {
                   # weather,temp, wind, 
                   win, loss, tie, win_pct, games_played) %>% 
     dplyr::mutate(
-      split_game_id = substr(game_id, 9, 20),
-      home_team     = str_split_fixed(split_game_id, "_", 2)[1, 2],
-      away_team     = str_split_fixed(split_game_id, "_", 2)[1, 1]
+      split_game_id = substr(game_id, 9, 20)
       ) %>% 
+    dplyr::ungroup()
+  
+  # Replace changed team names from game ID
+  team_results$split_game_id <- gsub("OAK", "LV", team_results$split_game_id)
+  team_results$split_game_id <- gsub("SD", "LAC", team_results$split_game_id)
+  team_results$split_game_id <- gsub("STL", "LA", team_results$split_game_id)
+
+  team_results <- 
+    team_results %>% 
+    dplyr::mutate(
+      home_team     =  str_split_fixed(split_game_id, "_", 2)[,2],
+      away_team     =  str_split_fixed(split_game_id, "_", 2)[,1]
+    ) %>% 
     dplyr::mutate(
       opponent  = case_when(
         home_team == team ~ away_team,
         away_team == team ~ home_team
       )
-    ) %>% 
-    dplyr::select(-split_game_id, -home_team, -away_team) %>% 
-    dplyr::relocate(season, team, opponent) %>% 
+    ) %>%
+    dplyr::select(-split_game_id, -home_team, -away_team) %>%
+    dplyr::relocate(season, team, opponent) %>%
     dplyr::filter(team != "")
   
   return(team_results)
