@@ -1,3 +1,259 @@
+# Angus Watters 
+# Exploratory Data Analysis
+# NFL Data from nflFastR & Tidy Tuesday 2012-05-04 Steam Games dataset
+
+rm(list = ls())
+
+# Get the Data
+library(tidyverse)
+library(janitor)
+library(stringr)
+library(nflfastR)
+library(httr)
+library(jsonlite)
+library(rvest)
+library(corrplot)
+library(plotly)
+library(viridis)
+library(olsrr)
+
+source("utils/utils.R")
+
+data_path  <-  here::here("data")
+
+# *******************
+# ---- Load Data ----
+# *******************
+
+# Team records/schedule
+team_records      <-  readRDS(here::here("data", "team_records.rds"))
+
+# Weekly Team defense
+team_defense      <- readRDS(here::here("data", "team_defense.rds"))
+
+# Weekly Team Fantasy points allowed by position
+fp_against        <- readRDS(here::here("data", "team_fp_against.rds"))
+
+# Weekly player stats
+player_stats      <- readRDS(here::here("data", "weekly_player_team_record.rds"))
+
+# Cumaltive fantasy points average per player and opponent defense
+fp_df             <- readRDS(here::here("data", "fp_model_data.rds"))
+
+# ***************************
+# ---- Season win totals ----
+# ***************************
+
+# season total wins
+win_total  <- 
+  team_records %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(season, team) %>% 
+  dplyr::summarise((across(where(is.numeric), sum, na.rm = T))) %>% 
+  dplyr::ungroup() 
+
+# Average wins per season per team
+team_wins <- 
+  win_total %>% 
+  dplyr::group_by(team) %>% 
+  dplyr::summarise((across(where(is.numeric), mean, na.rm = T))) %>% 
+  dplyr::mutate(
+    win_pct            = (win+ tie)/(win+loss + tie),
+    score_differential = max_score_diff - min_score_diff
+    ) %>% 
+  dplyr::ungroup() 
+
+
+ggplot() +
+  geom_point(data = team_wins, aes(x = reorder(team, win), y = win)) +
+  theme_bw() +
+  scale_y_continuous(limits = c(0, 17)) +
+  theme(
+    axis.text = element_text(angle = -45)
+  )
+
+# Season averages
+season_stats <- 
+  player_stats %>% 
+  dplyr::group_by(season) %>% 
+  dplyr::summarise(across(where(is.numeric), mean))
+
+ggplot() +
+  geom_boxplot(data = season_stats, aes(x = factor(season), y = passing_epa, outlier.shape = NA))
+
+# ***********************************
+# ---- Top teams @ each position ----
+# ***********************************
+
+fp_positions <- 
+  player_stats %>% 
+  dplyr::mutate(
+    fp_hppr   = fantasy_points + (receptions*0.5)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::filter(position %in% c("QB", "RB", "WR", "TE")) %>%
+  dplyr::group_by(season, team, position) %>% 
+  dplyr::summarise((across(where(is.numeric), sum, na.rm = T)))
+
+ggplot() +
+  geom_boxplot(data = fp_positions, aes(x = reorder(team, fp_hppr), y = fp_hppr, fill = position)) +
+  facet_wrap(~position) +
+  labs(
+    title = "How many fantasy points does each team produce?",
+    x = "Teams",
+    y = "Total QB Fantasy Points (0.5 PPR)"
+  ) + 
+  # scale_y_continuous(limits = c(0, 650)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = -45),
+    axis.title  = element_text(face = "bold")
+  )
+
+# ***********************
+# ---- Top teams EPA ----
+# ***********************
+
+epa_df <- 
+  player_stats %>% 
+  dplyr::mutate(
+    fp_hppr   = fantasy_points + (receptions*0.5)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::filter(position %in% c("QB", "RB", "WR", "TE")) %>%
+  dplyr::group_by(season, team) %>% 
+  dplyr::summarise((across(where(is.numeric), mean, na.rm = T))) %>% 
+  dplyr::mutate(
+    # total_epa = passing_epa + rushing_epa + receiving_epa
+    total_epa =  rushing_epa + receiving_epa
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(season, team, week, win, total_epa, 
+                # passing_epa,
+                receiving_epa,
+                rushing_epa) %>% 
+  tidyr::pivot_longer(
+    # cols      = c(passing_epa, rushing_epa, receiving_epa),
+    cols      = c(rushing_epa, receiving_epa),
+    names_to  = "epa_category",
+    values_to = "epa"
+    ) %>% 
+  dplyr::mutate(
+    epa_category = factor(epa_category, levels = c("rushing_epa", "receiving_epa"))
+    # epa_category = factor(epa_category, levels = c("passing_epa", "rushing_epa", "receiving_epa"))
+  )
+
+ggplot() +
+  geom_hline(yintercept = 0, colour = "darkgrey") +
+  geom_boxplot(data = epa_df, aes(x = reorder(team, total_epa), y = epa, fill = epa_category)) +
+  facet_wrap(~epa_category) +
+
+  # coord_flip() +
+  labs(
+    title = "Who is best at running and catching the football?",
+    x = "Teams",
+    y = "Average EPA"
+  ) + 
+  scale_y_continuous(limits = c(-4, 4)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = -45),
+    axis.title  = element_text(face = "bold")
+  )
+
+
+# ********************
+# ---- RB FP Corr ----
+# ********************
+
+fantasy             <- readRDS(here::here("data", "fp_rollmean_data.rds"))
+
+# Subset data to RBs and desired columns
+fp_df  <- 
+  fantasy %>% 
+  dplyr::filter(position == "RB") %>% 
+  dplyr::select(-fp_rank) %>% 
+  dplyr::select(player_id:fp_finish, contains("roll_4")) %>% 
+  setNames(c(gsub("_lag1|_roll_4", "", names(.)))) %>% 
+  dplyr::select(player_id:fp_rank, touches:catch_rate, receiving_yards:receiving_fumbles_lost,
+                receiving_yards_after_catch:receiving_ypt, opp_passing_yards:opp_rushing_yards, 
+                opp_passing_tds:opp_rushing_epa, opp_comp_pct:opp_ypt, fp_hppr_rb)
+# Corelation matrix
+mcor <- cor(na.omit(fp_df[sapply(na.omit(fp_df),is.numeric)])) %>% 
+  reshape2::melt() %>% 
+  tibble::tibble() %>% 
+  dplyr::mutate(across(where(is.numeric), round, 2))
+
+# Correlation heatmap
+cor_plot <- 
+  ggplot(mcor, aes(x = Var1,
+                    y = Var2,
+                    fill = value)) + 
+  geom_tile() +
+  theme(axis.text = element_text(angle = 45, vjust = 0.1, hjust = 1)) +
+  viridis::scale_fill_viridis(discrete = FALSE, direction = 1)
+
+cor_plot
+
+plotly::ggplotly(cor_plot)
+
+
+# **********************
+# ---- Top RB teams ----
+# **********************
+
+rb_df <- 
+  player_stats %>% 
+  dplyr::mutate(
+    fp_hppr   = fantasy_points + (receptions*0.5)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::filter(position == "RB") %>% 
+  dplyr::group_by(season, team) %>% 
+  dplyr::summarise((across(where(is.numeric), sum, na.rm = T)))
+
+ggplot() +
+  geom_boxplot(data = rb_df, aes(x = reorder(team, fp_hppr), y = fp_hppr), fill = "salmon") +
+  labs(
+    title = "How many RB fantasy points does each team produce?",
+    x = "Teams",
+    y = "Total RB Fantasy Points (0.5 PPR)"
+  ) + 
+  scale_y_continuous(limits = c(0, 650)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = -45),
+    axis.title  = element_text(face = "bold")
+  )
+
+# **********************
+# ---- Top QB teams ----
+# **********************
+
+qb_df <- 
+  player_stats %>% 
+  dplyr::mutate(
+    fp_hppr   = fantasy_points + (receptions*0.5)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::filter(position == "QB") %>% 
+  dplyr::group_by(season, team) %>% 
+  dplyr::summarise((across(where(is.numeric), sum, na.rm = T)))
+
+ggplot() +
+  geom_boxplot(data = qb_df, aes(x = reorder(team, fp_hppr), y = fp_hppr), fill = "salmon") +
+  labs(
+    title = "How many QB fantasy points does each team produce?",
+    x = "Teams",
+    y = "Total QB Fantasy Points (0.5 PPR)"
+  ) + 
+  scale_y_continuous(limits = c(0, 650)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = -45),
+    axis.title  = element_text(face = "bold")
+  )
+
 # *********************
 # ---- Correlation ----
 # *********************

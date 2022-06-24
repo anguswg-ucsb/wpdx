@@ -41,32 +41,31 @@ source("utils/utils.R")
 # Data dictionary
 desc <- nflfastR::field_descriptions
 
-# Load player stats
-stats       <- nflfastR::load_player_stats()
-dplyr::glimpse(stats)
 
-# unique seasons
-seasons_lst <- unique(stats$season)
+#  Final cumalative weekly player stats
 
-stats <- readRDS(here::here("data", "weekly_player.rds"))
+# Team records/schedule
+team_records      <-  readRDS(here::here("data", "team_records.rds"))
 
-# Team win/loss
-team_records <- readRDS(here::here("data", "team_records.rds"))
+# Weekly Team defense
+team_defense      <- readRDS(here::here("data", "team_defense.rds"))
 
-team_records %>% 
-  dplyr::mutate(opponent2 = case_when(
-    team == "LV"
-  ))
-
-rosters <- readRDS(here::here("data", "rosters.rds"))
+# Weekly Team Fantasy points allowed by position
+fp_against        <- readRDS(here::here("data", "team_fp_against.rds"))
 
 # Weekly player stats
-week_stats <- readRDS(here::here("data", "weekly_player_team_record.rds")) %>% 
-  dplyr::filter(position == "RB")
+player_stats      <- readRDS(here::here("data", "weekly_player_team_record.rds"))
+# dplyr::filter(position == "RB")
 
-# Defensive Rankings
-def_ranks <-  readRDS(here::here("data", "rush_defense.rds"))
-unique(week_stats$team)
+# Cumlative Weekly player stats
+cuml_player_stats <-  readRDS(here::here("data", "cumulative_player_stats.rds"))
+
+fp_df <- readRDS(here::here("data", "fp_model_data.rds"))
+
+# ***************************
+# ---- RB data and stats ----
+# ***************************
+
 
 # ***********************
 # ---- Win totals QB ----

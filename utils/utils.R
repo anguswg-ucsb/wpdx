@@ -54,6 +54,97 @@ cumulative_mean <- function(x) {
   return(cummean)
 }
 
+# is.nan() method for dataframes
+is_nan_data_frame <- function(x) {
+  do.call(cbind, lapply(x, is.nan))
+}
+
+# fill NA with column mean
+mean_na <- function(x) {
+  ifelse(is.na(x), mean(x, na.rm = TRUE), x)
+}
+# Function takes in Play by play dataset from nflfastR::load_pbp() and tidys --> adds win percentage
+get_score_diff <- function(season_pbp) {
+  
+  season_year <-  season_pbp$season[1]
+  
+  logger::log_info("Calculating {season_year} win loss records...")
+  
+  homeaway <- 
+    # season_pbp %>% 
+    pbp %>% 
+    dplyr::select(game_id, home_team, away_team) %>% 
+    dplyr::group_by(game_id) %>% 
+    dplyr::slice(1) %>%
+    tidyr::pivot_longer(
+      cols      = c(home_team, away_team),
+      names_to  = "home_away",
+      values_to = "team"
+    ) %>% 
+    dplyr::ungroup()
+  
+  # Slice off top row for each game to extract winners/loser
+  season_pbp <-
+    # season_pbp %>% 
+    pbp %>%    
+    # dplyr::select(season, game_id, play_id,
+    #               home_team, away_team, season_type, week, home_score, away_score, drive, qtr,play_type, game_seconds_remaining,drive_time_of_possession,passing_yards,
+    #               posteam, total_home_score,total_away_score, 
+    #               result, score_differential, score_differential_post, roof, surface) %>%
+    # dplyr::select(season, game_id, home_team, away_team, season_type, week, home_score, away_score,
+    #               posteam, total_home_score,total_away_score, 
+    #               result, score_differential, score_differential_post, roof, surface) %>%
+    dplyr::group_by(game_id, posteam) %>%
+    tidyr::pivot_longer(
+      cols      = c(away_team, home_team),
+      names_to  = "home_away",
+      values_to = "team"
+    ) %>%
+    dplyr::ungroup() %>% 
+    dplyr::relocate(season, game_id, qtr,drive, play_id, play_type, game_seconds_remaining, drive_time_of_possession) %>%
+    dplyr::group_by(game_id, qtr, posteam) %>% 
+    dplyr::arrange(-game_seconds_remaining, .by_group = T) %>% 
+    dplyr::mutate(
+      drive_time_of_possession_sec =  
+        60*as.numeric(sub(':.*', '', drive_time_of_possession)) + as.numeric(sub('.*:', '', drive_time_of_possession))
+    ) %>% 
+    dplyr::relocate(drive_time_of_possession_sec,drive_time_of_possession ) %>% 
+    dplyr::ungroup()
+  
+  time_poss <- 
+    season_pbp %>% 
+    dplyr::filter(game_id == "2020_01_ARI_SF") %>%
+    dplyr::group_by(game_id, qtr, posteam, drive) %>% 
+    dplyr::summarize(
+      mean_score_diff = mean(score_differential, na.rm = T),
+      max_score_diff  = max(score_differential, na.rm = T),
+      min_score_diff  = min(score_differential, na.rm = T),
+      passing_yards   = sum(passing_yards, na.rm = T),
+      time_of_poss    = mean(drive_time_of_possession_sec, na.rm = T)
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(game_id, qtr, posteam) %>% 
+    dplyr::summarize(
+      mean_score_diff = mean(mean_score_diff, na.rm = T),
+      max_score_diff  = max(max_score_diff),
+      min_score_diff  = min(min_score_diff),
+      passing_yards   = sum(passing_yards, na.rm = T),
+      time_of_poss    = sum(time_of_poss, na.rm = T)
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::filter(!is.na(posteam)) %>% 
+    dplyr::group_by(game_id, qtr) %>% 
+    dplyr::mutate(
+      total_top = time_of_poss/sum(time_of_poss, na.rm = T)
+    ) %>% 
+    dplyr::mutate(across(where(is.numeric), round, 3))
+    tidyr::pivot_wider(
+      names_from = qtr,
+      values_from = c(mean_score_diff, max_score_diff, min_score_diff, time_of_poss, passing_yards)
+    )
+  
+  
+}
 # Function takes in Play by play dataset from nflfastR::load_pbp() and tidys --> adds win percentage
 get_win_pct <- function(season_pbp) {
 
@@ -62,7 +153,8 @@ get_win_pct <- function(season_pbp) {
   logger::log_info("Calculating {season_year} win loss records...")
 
   homeaway <- 
-    season_pbp %>% 
+    # season_pbp %>% 
+    pbp %>% 
     dplyr::select(game_id, home_team, away_team) %>% 
     dplyr::group_by(game_id) %>% 
     dplyr::slice(1) %>%
@@ -72,13 +164,17 @@ get_win_pct <- function(season_pbp) {
       values_to = "team"
       ) %>% 
     dplyr::ungroup()
- 
+
   # Slice off top row for each game to extract winners/loser
   season_pbp <-
-    season_pbp %>% 
-    dplyr::select(season, game_id, home_team, away_team, season_type, week, home_score, away_score,
+    # season_pbp %>% 
+    dplyr::select(season, game_id, play_id,
+                  home_team, away_team, season_type, week, home_score, away_score, qtr,play_type, game_seconds_remaining,drive_time_of_possession,
                   posteam, total_home_score,total_away_score, 
-                  result, score_differential, score_differential_post, roof, surface) %>%
+                              result, score_differential, score_differential_post, roof, surface) %>%
+    # dplyr::select(season, game_id, home_team, away_team, season_type, week, home_score, away_score,
+    #               posteam, total_home_score,total_away_score, 
+    #               result, score_differential, score_differential_post, roof, surface) %>%
     dplyr::group_by(game_id, posteam) %>% 
     tidyr::pivot_longer(
       cols      = c(away_team, home_team),
@@ -86,6 +182,25 @@ get_win_pct <- function(season_pbp) {
       values_to = "team"
     ) %>%
     dplyr::ungroup() %>% 
+    dplyr::relocate(season, game_id, team, home_away, qtr,play_id, play_type, game_seconds_remaining, drive_time_of_possession) %>% 
+    dplyr::filter(game_id == "2020_01_ARI_SF") %>% 
+    dplyr::group_by(game_id, qtr, posteam) %>% 
+    dplyr::arrange(-game_seconds_remaining, .by_group = T) %>% 
+    dplyr::mutate(
+      drive_time_of_possession_sec =  
+        60*as.numeric(sub(':.*', '', drive_time_of_possession)) + as.numeric(sub('.*:', '', drive_time_of_possession))
+    ) %>% 
+    dplyr::relocate(drive_time_of_possession_sec,drive_time_of_possession ) %>% 
+    dplyr::summarize(
+      max_score_diff = max(score_differential),
+      min_score_diff = min(score_differential),
+      time_of_poss   = sum(drive_time_of_possession_sec, na.rm = T)
+    ) %>% 
+    tidyr::pivot_wider(
+      names_from = qtr,
+      values_from = c(max_score_diff, min_score_diff, time_of_poss)
+    )
+  
     dplyr::group_by(game_id) %>%
     # dplyr::mutate(
     #   max_score_diff = max(score_differential, na.rm = T),
@@ -212,6 +327,109 @@ clean_rosters <- function(fscrape) {
   return(roster_df)
 }
 
+# Add rolling mean to win % data
+lag_win_pct <- function(
+  df,
+  periods = 8
+                        ) {
+  
+  logger::log_info("Creating {periods} rolling mean on win %")
+  
+  lag_records <-
+    df %>%
+    # dplyr::select(season, week, team, win_pct) %>%
+    dplyr::group_by(team) %>% 
+    dplyr::arrange(season, week, .by_group = T) %>% 
+    timetk::tk_augment_lags(win_pct, .lags = 1) %>%
+    timetk::tk_augment_slidify(
+      c(win_pct_lag1),
+      .f = ~mean(.x, na.rm = T),
+      .align = c("right"),
+      .period  = c(periods),
+      .partial = TRUE
+    ) %>% 
+    dplyr::ungroup() %>%
+    dplyr::select(team:games_played, win_pct_rmean = win_pct_lag1_roll_8) %>%
+    dplyr::mutate(
+      win_pct_rmean = case_when(
+        is.nan(win_pct_rmean) & win_pct == 1 ~ 1,
+        is.nan(win_pct_rmean) & win_pct == 0 ~ 0,
+        TRUE                                 ~ win_pct_rmean
+      )
+    )
+  
+  return(lag_records)
+}
+
+# Add rolling mean to player stats
+lag_player_stats <- function(
+  df,
+  periods = c(1, 2, 4, 8, 16)
+) {
+  
+  logger::log_info("\n\nCreating {periods} week rolling mean on player stats")
+  
+  lag_players <-
+    df %>%
+    # dplyr::filter(carries > 0) %>%
+    dplyr::group_by(player_id) %>% 
+    dplyr::arrange(season, week, .by_group = T) %>% 
+    timetk::tk_augment_lags(c(fp_rank, qb_touches:receiving_ypt), .lags = 1) %>% 
+    timetk::tk_augment_slidify(
+      contains("_lag1"),
+      .f       = ~ mean(.x, na.rm = T),
+      .align   = c("right"),
+      .period  = c(periods),
+      .partial = TRUE
+    ) %>% 
+    dplyr::ungroup()
+  
+  return(lag_players)
+  # tmp_lag <-
+  #   lag_players %>%
+  #   dplyr::select(player_id:fp_hppr, contains("roll_"))
+  # ggp <- 
+  #   ggplot() +
+  #   geom_line(data = tmp_rb, aes(x = n_game, y = rushing_yards), size = 2) + 
+  #   geom_line(data = tmp_rb, aes(x = n_game, y = rushing_yards_lag1_roll_4), size = 1, color = "red") 
+  # plotly::ggplotly(ggp)
+
+}
+
+# Add rolling mean to player stats
+lag_team_stats <- function(
+  df,
+  periods = c(1, 2, 4, 8, 16)
+) {
+  
+  logger::log_info("\n\nCreating {periods} week rolling mean on player stats")
+  
+  lag_team <-
+    df %>%
+    # team_positions
+    dplyr::group_by(team, position) %>% 
+    dplyr::arrange(season, week, .by_group = T) %>% 
+    timetk::tk_augment_lags(c(fp_rank, qb_touches:receiving_ypt), .lags = 1) %>% 
+    timetk::tk_augment_slidify(
+      contains("_lag1"),
+      .f       = ~ mean(.x, na.rm = T),
+      .align   = c("right"),
+      .period  = c(periods),
+      .partial = TRUE
+    ) %>% 
+    dplyr::ungroup()
+  
+  return(lag_team)
+  # tmp_lag <-
+  #   lag_players %>%
+  #   dplyr::select(player_id:fp_hppr, contains("roll_"))
+  # ggp <- 
+  #   ggplot() +
+  #   geom_line(data = tmp_rb, aes(x = n_game, y = rushing_yards), size = 2) + 
+  #   geom_line(data = tmp_rb, aes(x = n_game, y = rushing_yards_lag1_roll_4), size = 1, color = "red") 
+  # plotly::ggplotly(ggp)
+  
+}
 # Calculate QB EPA per play and total EPA per game
 get_qb_stats <- function(epa_pbp) {
 
