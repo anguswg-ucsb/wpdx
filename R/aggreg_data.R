@@ -70,7 +70,7 @@ saveRDS(qb_stats, here::here("data", "weekly_player.rds"))
 
 # pull rosters for every year
 team_records <- lapply(seasons_lst, FUN = function(x) {
-  pbp <- nflfastR::load_pbp(x) %>% 
+  pbp <- nflfastR::load_pbp(2020) %>% 
     get_win_pct()
   }
   ) %>%

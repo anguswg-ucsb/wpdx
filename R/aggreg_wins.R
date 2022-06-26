@@ -27,7 +27,11 @@ data_path  <-  here::here("data")
 # Team Win %
 # Height
 # Weight
-# Snap % 
+# Snap % # Data dictionary
+desc <- nflfastR::field_descriptions
+
+# unique seasons
+seasons_lst <- 1999:2021
 # % RB carries
 # Yards per route run 
 # Yard per carry
@@ -37,48 +41,67 @@ data_path  <-  here::here("data")
 # ---- Player stats ----
 # **********************
 
-# Data dictionary
-desc <- nflfastR::field_descriptions
 
-# Load player stats
-stats       <- nflfastR::load_player_stats()
-dplyr::glimpse(stats)
 
-# unique seasons
-seasons_lst <- unique(stats$season)
-
-# **********************
-# ---- QB EPA stats ----
-# **********************
+# ---- Team pbp ----
+# ******************
 
 # load QB stats and calculate game EPA, cumalitve EPA, EPA per play
-qb_stats <- lapply(seasons_lst, FUN = function(x) {
-  logger::log_info("Retrieving {x} weekly player stats...")
-  pbp <- nflfastR::load_pbp(x) %>% 
-    # nflfastR::add_qb_epa() %>% 
-    calculate_player_stats(weekly = TRUE) %>% 
-    dplyr::rename("team" = "recent_team")
-  # get_qb_stats()
+pbp_stats <- lapply(seasons_lst, FUN = function(x) {
+  
+  logger::log_info("Retrieving {x} weekly team pbp stats...")
+  pbp <- nflfastR::load_pbp(x)
 }
-) %>%
-  dplyr::bind_rows()
+) 
 
-saveRDS(qb_stats, here::here("data", "weekly_player.rds"))
-# **********************
+# saveRDS(qb_stats, here::here("data", "weekly_player.rds"))
+
+# ******************************
+# ---- Team offensive stats ----
+# ******************************
+
+
+# load QB stats and calculate game EPA, cumalitve EPA, EPA per play
+off_stats <- lapply(pbp_stats, FUN = function(x) {
+  
+  offense <- get_offense(x)
+
+}
+) 
+off_df <- dplyr::bind_rows(off_stats)
+
+saveRDS(off_df, here::here("data", "offensive.rds"))
+
+# ******************************
+# ---- Team defensive stats ----
+# ******************************
+
+# load QB stats and calculate game EPA, cumalitve EPA, EPA per play
+def_stats <- lapply(pbp_stats, FUN = function(x) {
+  
+  defense <- get_defense(x)
+  
+}
+) 
+def_df <- dplyr::bind_rows(def_stats)
+saveRDS(def_df, here::here("data", "defensive.rds"))
+
+ # **********************
 # ---- Team records ----
 # **********************
 rm(pbp)
 # pull rosters for every year
 team_records <- lapply(seasons_lst, FUN = function(x) {
+  
   logger::log_info("Season PBP: {x}")
-  pbp <- nflfastR::load_pbp(2020)
-  # %>% 
-  #   get_win_pct()
-}
+  
+  schedule <- nflfastR::fast_scraper_schedules(x) %>% 
+    get_schedule()
+  }
 ) %>%
   dplyr::bind_rows()
 
-# saveRDS(team_records, here::here("data", "team_records.rds"))
+saveRDS(team_records, here::here("data", "wins.rds"))
 
 # ***********************
 # ---- Clean rosters ----
